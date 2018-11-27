@@ -28,9 +28,6 @@ void setup() {
 
 void loop() {
   Serial.print(millis());
-  Serial.println(F(": Setup..."));
+  Serial.println(F(": Loop..."));
   app.loop();
-  const int val = app.getVoltage();
-  Serial.println(val);                // debug value
-
 }
