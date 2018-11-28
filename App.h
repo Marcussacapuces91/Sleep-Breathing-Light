@@ -19,8 +19,6 @@ limitations under the License.
 #include <Arduino.h>
 #include <avr/sleep.h>
 
-const int8_t array[] PROGMEM = { 3, 5, 7, 11, 13, 17, 19 };
-
 class App {
 public:
   App() {}
@@ -28,6 +26,18 @@ public:
   void setup() {
     pinMode(BLUE_LED, OUTPUT);
     pinMode(BUTTON, INPUT_PULLUP);  
+
+/*
+// Set Timer 1 : fast PWM
+    DDRB  |= _BV(PB1) | _BV(PB2);       // set pins as outputs
+    OCR1A = 0;
+    TCCR1A = _BV(COM1A1) | _BV(COM1B1)  // non-inverting PWM
+            | _BV(WGM11);                 // mode 14: fast PWM, TOP=ICR1
+    TCCR1B = _BV(WGM13) | _BV(WGM12)
+            | _BV(CS11);                  // prescaler 1
+    ICR1 = 256;                         // TOP counter value
+*/
+    
 
     const unsigned vBat = getVoltage();
     if (vBat < 2500) flash(1);
@@ -40,7 +50,7 @@ public:
   }
 
   void loop() {
-// Mise en veille après l'initialisation.
+
     delay(1000);
     Serial.print("Start ");
     Serial.println(App::push);
@@ -52,25 +62,25 @@ public:
         sleepNow();
         return;        
       }
-    } else if (App::push > 4) { // Une pression avec relachement
+    } else if (App::push > 4) { // plus de 2 pressions avec relachement
       App::push = 0;
       sleepNow();
       return;        
     }
 
-    const unsigned long duree = (App::push == 2 ? 25 * 6 : 5 * 60) * 1000UL; // 2,5 ou 5 min en ms
+    const unsigned long duree = (App::push == 2 ? 5 * 60 : 10 * 60) * 1000UL; // 5 ou 10 min en ms
 
 // Début d'un cycle    
     App::push = 0;
     const unsigned long start = millis();
-    unsigned long now;
+    unsigned long now = 0;
     do {
       Serial.print(now - start);
       Serial.print(" - ");
       Serial.println(duree);
       
-      for (int i = 0; i < 32; ++i) {
-        analogWrite(BLUE_LED, lum(i) / 4);
+      for (byte i = 0; i < 64; ++i) {
+        analogWrite(BLUE_LED, lum<63,50>(i));
         if (App::push > 0) {
           digitalWrite(BLUE_LED, LOW);
           return;
@@ -78,8 +88,8 @@ public:
         now = millis();
         delay((60000ULL * duree) / (11 * duree - 5 * (now - start)) / 128);
       }
-      for (int i = 0; i < 32; ++i) {
-        analogWrite(BLUE_LED, lum(31 - i) / 4);
+      for (byte i = 0; i < 64; ++i) {
+        analogWrite(BLUE_LED, lum<63,50>(63 - i));
         if (App::push > 0) {
           digitalWrite(BLUE_LED, LOW);
           return;
@@ -102,6 +112,13 @@ protected:
     }
   }
   
+  void eclairer(const unsigned val) {
+    DDRB  |= _BV(PB1) | _BV(PB2);       /* set pins as outputs */
+    
+    OCR1A = val;
+    OCR1B = val;
+  }
+  
   unsigned getVoltage() const {
     ADCSRA |= _BV(ADEN);  // Enable ADC
     ADMUX =  0b01001110;  //  vref = AVcc ; analog input = 1.1V (VBG)
@@ -117,12 +134,16 @@ protected:
     return (1100UL * 1023 / ADC);     // AVcc = Vbg/ADC*1023 = 1.1V*1023/ADC 
   }
 
+/**
+ * Calcule la luminosité sur une echelle de [0..L] à donner à la LED suivant Brillance attendue [0..B].
+ */
+  template <unsigned B, unsigned L>
   unsigned lum(const unsigned b) const {
-    if (b <= 2) {
-      return 255 * 1000ULL * b / (31UL * 9033);
+    if (b * 25 <= 2 * B) { // b <= 8.B/100
+      return 1000UL * L * b / (9033UL * B);
     } else {
-      const unsigned long long n = 100UL * b + (16UL * 31);
-      return n * n * n / 182355501UL;
+      const unsigned long n = 100 * b + (16 * B);
+      return (1ULL * L) * n * n * n / (1560896ULL * B * B * B);
     }
   }
 
